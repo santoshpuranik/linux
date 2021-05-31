@@ -108,6 +108,8 @@ struct i2c_msg {
 #define I2C_FUNC_SMBUS_WRITE_I2C_BLOCK	0x08000000 /* w/ 1-byte reg. addr. */
 #define I2C_FUNC_SMBUS_HOST_NOTIFY	0x10000000
 #define I2C_FUNC_SMBUS_V3_BLOCK		0x20000000 /* Device supports 255 byte block */
+						   /* Note that I2C_SMBUS ioctl only */
+						   /* supports a 32 byte block */
 
 #define I2C_FUNC_SMBUS_BYTE		(I2C_FUNC_SMBUS_READ_BYTE | \
 					 I2C_FUNC_SMBUS_WRITE_BYTE)
