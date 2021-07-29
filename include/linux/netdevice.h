@@ -1734,6 +1734,7 @@ enum netdev_priv_flags {
  *	@ieee802154_ptr: IEEE 802.15.4 low-rate Wireless Personal Area Network
  *			 device struct
  *	@mpls_ptr:	mpls_dev struct pointer
+ *	@mctp_ptr:	MCTP specific data
  *
  *	@dev_addr:	Hw address (before bcast,
  *			because most packets are unicast)
@@ -2016,6 +2017,9 @@ struct net_device {
 	struct wpan_dev		*ieee802154_ptr;
 #if IS_ENABLED(CONFIG_MPLS_ROUTING)
 	struct mpls_dev __rcu	*mpls_ptr;
+#endif
+#if IS_ENABLED(CONFIG_MCTP)
+	struct mctp_dev __rcu	*mctp_ptr;
 #endif
 
 /*
