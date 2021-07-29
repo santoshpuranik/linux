@@ -29,20 +29,21 @@
 
 #define MCTP_I2C_OF_PROP "mctp-controller"
 
-struct mctp_i2c_hdr {
-	u8 dest_slave;
-	u8 command;
-	u8 byte_count;
-	u8 source_slave;
-};
+static struct {
+	// lock protects clients and also prevents adding/removing adapters
+	// during mctp_i2c_client probe/remove.
+	struct mutex lock;
+	// list of struct mctp_i2c_client
+	struct list_head clients;
+} mi_driver_state;
 
 struct mctp_i2c_client;
 
-// netdev and i2c transmit
 struct mctp_i2c_dev {
 	struct net_device *ndev;
 	struct i2c_adapter *adapter;
 	struct mctp_i2c_client *client;
+	struct list_head list; // for mctp_i2c_client.devs
 
 	size_t pos;
 	u8 buffer[MCTP_I2C_RXBUFSZ];
@@ -52,43 +53,49 @@ struct mctp_i2c_dev {
 	struct sk_buff_head tx_queue;
 };
 
-// i2c slave side for i2c receive
+struct mctp_i2c_hdr {
+	u8 dest_slave;
+	u8 command;
+	u8 byte_count;
+	u8 source_slave;
+};
+
 struct mctp_i2c_client {
-	// client for a hardware i2c bus
+	// client for a hardware i2c bus at the top of the mux tree
 	struct i2c_client *client;
 	u8 lladdr;
 
-	struct mctp_i2c_dev *dev;
+	struct mctp_i2c_dev *sel;
+	struct list_head devs;
+	spinlock_t curr_lock;
+
+	struct list_head list; // for mi_driver_state.clients
 };
 
 static int mctp_i2c_recv(struct mctp_i2c_dev *midev);
 static int mctp_i2c_slave_cb(struct i2c_client *client,
 			     enum i2c_slave_event event, u8 *val);
 
-/* Determines whether a device is an i2c adapter with
-   the "mctp-controller" devicetree property set.
-   Optionally returns the root i2c_adapter */
-static struct i2c_adapter *mctp_i2c_adapter_match(struct device *dev,
-	struct i2c_adapter **ret_root)
+ssize_t mctp_current_mux_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
 {
-	struct i2c_adapter *root = NULL, *adap = NULL;
+	struct mctp_i2c_client *mcli = i2c_get_clientdata(to_i2c_client(dev));
+	struct net_device *ndev = NULL;
+	unsigned long flags;
+	ssize_t l;
 
-	if (dev->type != &i2c_adapter_type)
-		return NULL;
-	if (!dev->of_node)
-		return NULL;
-	if (!of_property_read_bool(dev->of_node, MCTP_I2C_OF_PROP))
-		return NULL;
-	root = i2c_root_adapter(dev);
-	WARN_ONCE(!root, "%s failed to find root adapter for %pOF\n",
-		__func__, dev->of_node);
-	if (!root)
-		return NULL;
-	adap = to_i2c_adapter(dev);
-	if (ret_root)
-		*ret_root = root;
-	return adap;
+	spin_lock_irqsave(&mcli->curr_lock, flags);
+	if (mcli->sel) {
+		ndev = mcli->sel->ndev;
+		dev_hold(ndev);
+	}
+	spin_unlock_irqrestore(&mcli->curr_lock, flags);
+	l = scnprintf(buf, PAGE_SIZE, "%s\n", ndev ? ndev->name : "(none)");
+	if (ndev)
+		dev_put(ndev);
+	return l;
 }
+DEVICE_ATTR_RO(mctp_current_mux);
 
 /* Creates a new i2c slave device attached to the root adapter.
  * Sets up the slave callback.
@@ -101,22 +108,23 @@ static struct mctp_i2c_client *mctp_i2c_new_client(struct i2c_client *client)
 	int rc;
 
 	if (client->flags & I2C_CLIENT_TEN) {
-		dev_err(&client->dev, "failed, MCTP requires a 7-bit I2C address, addr=0x%x\n",
-			client->addr);
+		dev_err(&client->dev, "%s failed, MCTP requires a 7-bit I2C address, addr=0x%x",
+			__func__, client->addr);
 		rc = -EINVAL;
 		goto err;
 	}
 
 	root = i2c_root_adapter(&client->dev);
 	if (!root) {
-		dev_err(&client->dev, "failed to find root adapter\n");
+		dev_err(&client->dev, "%s failed to find root adapter\n", __func__);
 		rc = -ENOENT;
 		goto err;
 	}
 	if (root != client->adapter) {
 		dev_err(&client->dev,
-			"The mctp-i2c driver cannot be attached to an I2C mux adapter.\n"
-			" The driver should be attached to the mux tree root adapter\n");
+			"A mctp-i2c-controller client cannot be placed on an I2C mux adapter.\n"
+			" It should be placed on the mux tree root adapter\n"
+			" then set mctp-controller property on adapters to attach\n");
 		rc = -EINVAL;
 		goto err;
 	}
@@ -126,6 +134,9 @@ static struct mctp_i2c_client *mctp_i2c_new_client(struct i2c_client *client)
 		rc = -ENOMEM;
 		goto err;
 	}
+	spin_lock_init(&mcli->curr_lock);
+	INIT_LIST_HEAD(&mcli->devs);
+	INIT_LIST_HEAD(&mcli->list);
 	mcli->lladdr = client->addr & 0xff;
 	mcli->client = client;
 	i2c_set_clientdata(client, mcli);
@@ -138,11 +149,20 @@ static struct mctp_i2c_client *mctp_i2c_new_client(struct i2c_client *client)
 		goto err;
 	}
 
+	rc = device_create_file(&client->dev, &dev_attr_mctp_current_mux);
+	if (rc) {
+		dev_err(&client->dev, "%s adding sysfs \"%s\" failed %d\n", __func__,
+			dev_attr_mctp_current_mux.attr.name, rc);
+		// continue anyway
+	}
+
 	return mcli;
 err:
 	if (mcli) {
-		if (mcli->client)
+		if (mcli->client) {
+			device_remove_file(&mcli->client->dev, &dev_attr_mctp_current_mux);
 			i2c_unregister_device(mcli->client);
+		}
 		kfree(mcli);
 	}
 	return ERR_PTR(rc);
@@ -152,13 +172,41 @@ static void mctp_i2c_free_client(struct mctp_i2c_client *mcli)
 {
 	int rc;
 
+	WARN_ON(!mutex_is_locked(&mi_driver_state.lock));
+	WARN_ON(!list_empty(&mcli->devs));
+	WARN_ON(mcli->sel); // sanity check, no locking
+
+	device_remove_file(&mcli->client->dev, &dev_attr_mctp_current_mux);
 	rc = i2c_slave_unregister(mcli->client);
 	// leak if it fails, we can't propagate errors upwards
 	if (rc)
-		dev_err(&mcli->client->dev,
-			"%s i2c unregister failed %d\n", __func__, rc);
+		dev_err(&mcli->client->dev, "%s i2c unregister failed %d\n", __func__, rc);
 	else
 		kfree(mcli);
+}
+
+/* Switch the mctp i2c device to receive responses.
+ * Call with curr_lock held */
+static void __mctp_i2c_device_select(struct mctp_i2c_client *mcli,
+	struct mctp_i2c_dev *midev)
+{
+	assert_spin_locked(&mcli->curr_lock);
+	if (midev)
+		dev_hold(midev->ndev);
+	if (mcli->sel)
+		dev_put(mcli->sel->ndev);
+	mcli->sel = midev;
+}
+
+// Switch the mctp i2c device to receive responses
+static void mctp_i2c_device_select(struct mctp_i2c_client *mcli,
+	struct mctp_i2c_dev *midev)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&mcli->curr_lock, flags);
+	__mctp_i2c_device_select(mcli, midev);
+	spin_unlock_irqrestore(&mcli->curr_lock, flags);
 }
 
 static int mctp_i2c_slave_cb(struct i2c_client *client,
@@ -166,9 +214,15 @@ static int mctp_i2c_slave_cb(struct i2c_client *client,
 {
 	struct mctp_i2c_client *mcli = i2c_get_clientdata(client);
 	struct mctp_i2c_dev *midev = NULL;
+	unsigned long flags;
 	int rc = 0;
 
-	midev = mcli->dev;
+	spin_lock_irqsave(&mcli->curr_lock, flags);
+	midev = mcli->sel;
+	if (midev)
+		dev_hold(midev->ndev);
+	spin_unlock_irqrestore(&mcli->curr_lock, flags);
+
 	if (!midev)
 		return 0;
 
@@ -194,6 +248,7 @@ static int mctp_i2c_slave_cb(struct i2c_client *client,
 		break;
 	}
 
+	dev_put(midev->ndev);
 	return rc;
 }
 
@@ -268,9 +323,13 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 
 	daddr = hdr->dest_slave >> 1;
 
-	rc = i2c_smbus_xfer(midev->adapter, daddr, I2C_CLIENT_PEC,
+	i2c_lock_bus(midev->adapter, I2C_LOCK_SEGMENT);
+	mctp_i2c_device_select(midev->client, midev);
+	rc = __i2c_smbus_xfer(midev->adapter, daddr, I2C_CLIENT_PEC,
 			    I2C_SMBUS_WRITE, hdr->command, I2C_SMBUS_BLOCK_DATA,
 		(void *)&hdr->byte_count);
+	// TODO: only unlock the bus after a response or timeout period
+	i2c_unlock_bus(midev->adapter, I2C_LOCK_SEGMENT);
 	if (rc) {
 		dev_warn_ratelimited(&midev->adapter->dev,
 			"%s i2c_smbus_xfer failed %d", __func__, rc);
@@ -280,7 +339,7 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 
 static int mctp_i2c_header_create(struct sk_buff *skb, struct net_device *dev,
 				  unsigned short type, const void *daddr,
-				  const void *saddr, unsigned int len)
+	   const void *saddr, unsigned int len)
 {
 	struct mctp_i2c_hdr *hdr;
 	struct mctp_hdr *mhdr;
@@ -364,6 +423,7 @@ static void mctp_i2c_net_setup(struct net_device *dev)
 {
 	dev->type = ARPHRD_MCTP;
 
+	// TODO: need to increase I2C_SMBUS_BLOCK_MAX -> 255 for smbus 3.0
 	dev->mtu = MCTP_I2C_MAXMTU;
 	dev->min_mtu = MCTP_I2C_MINMTU;
 	dev->max_mtu = MCTP_I2C_MAXMTU;
@@ -371,6 +431,8 @@ static void mctp_i2c_net_setup(struct net_device *dev)
 
 	dev->hard_header_len = sizeof(struct mctp_i2c_hdr);
 	dev->addr_len = 1;
+
+	dev->broadcast[0] = 0xff; // TODO: should it be 0x00? or 0xc2 ?
 
 	dev->netdev_ops		= &mctp_i2c_ops;
 	dev->header_ops		= &mctp_i2c_headops;
@@ -380,16 +442,27 @@ static void mctp_i2c_net_setup(struct net_device *dev)
 static int mctp_i2c_add_netdev(struct mctp_i2c_client *mcli,
 			       struct i2c_adapter *adap)
 {
+	unsigned long flags;
 	struct mctp_i2c_dev *midev = NULL;
 	struct net_device *ndev = NULL;
+	struct i2c_adapter *root;
 	char namebuf[30];
 	int rc;
 
+	root = i2c_root_adapter(&adap->dev);
+	if (root != mcli->client->adapter) {
+		dev_err(&mcli->client->dev,
+			"I2C adapter %s is not a child bus of %s",
+			mcli->client->adapter->name, root->name);
+		return -EINVAL;
+	}
+
+	WARN_ON(!mutex_is_locked(&mi_driver_state.lock));
 	snprintf(namebuf, sizeof(namebuf), "mctpi2c%d", adap->nr);
 	ndev = alloc_netdev(sizeof(*midev), namebuf, NET_NAME_ENUM, mctp_i2c_net_setup);
 	if (!ndev) {
-		rc = -ENOMEM;
 		dev_err(&mcli->client->dev, "%s alloc netdev failed\n", __func__);
+		rc = -ENOMEM;
 		goto err;
 	}
 	dev_net_set(ndev, current->nsproxy->net_ns);
@@ -399,6 +472,7 @@ static int mctp_i2c_add_netdev(struct mctp_i2c_client *mcli,
 	midev = netdev_priv(ndev);
 	INIT_WORK(&midev->tx_work, mctp_i2c_tx_dowork);
 	skb_queue_head_init(&midev->tx_queue);
+	INIT_LIST_HEAD(&midev->list);
 	midev->adapter = adap;
 	midev->client = mcli;
 	/* Hold references */
@@ -419,7 +493,12 @@ static int mctp_i2c_add_netdev(struct mctp_i2c_client *mcli,
 			ndev->name, rc);
 		goto err;
 	}
-	mcli->dev = midev;
+	spin_lock_irqsave(&mcli->curr_lock, flags);
+	list_add(&midev->list, &mcli->devs);
+	// Select a device by default
+	if (!mcli->sel)
+		__mctp_i2c_device_select(mcli, midev);
+	spin_unlock_irqrestore(&mcli->curr_lock, flags);
 
 	return 0;
 err:
@@ -435,6 +514,7 @@ err:
 static void mctp_i2c_free_netdev(struct mctp_i2c_dev *midev)
 {
 	struct mctp_i2c_client *mcli = midev->client;
+	unsigned long flags;
 
 	/* Flush TX to i2c */
 	netif_stop_queue(midev->ndev);
@@ -446,12 +526,137 @@ static void mctp_i2c_free_netdev(struct mctp_i2c_dev *midev)
 	put_device(&mcli->client->dev);
 
 	/* Remove it from the parent mcli */
-	mcli->dev = NULL;
+	spin_lock_irqsave(&mcli->curr_lock, flags);
+	list_del(&midev->list);
+	if (mcli->sel == midev)
+		__mctp_i2c_device_select(mcli, list_first_entry_or_null(
+			&mcli->devs, struct mctp_i2c_dev, list));
+	spin_unlock_irqrestore(&mcli->curr_lock, flags);
 
 	/* Remove netdev. mctp_i2c_slave_cb() takes a dev_hold() so removing
 	 * it now is safe. unregister_netdev() frees ndev and midev.
 	 */
 	unregister_netdev(midev->ndev);
+}
+
+static void mctp_i2c_remove_netdev(struct mctp_i2c_client *mcli,
+	struct i2c_adapter *adap)
+{
+	unsigned long flags;
+	struct mctp_i2c_dev *midev = NULL, *m = NULL;
+
+	WARN_ON(!mutex_is_locked(&mi_driver_state.lock));
+	spin_lock_irqsave(&mcli->curr_lock, flags);
+	// list size is limited by number of MCTP netdevs on a single hardware bus
+	list_for_each_entry(m, &mcli->devs, list)
+		if (m->adapter == adap) {
+			midev = m;
+			break;
+		}
+	spin_unlock_irqrestore(&mcli->curr_lock, flags);
+
+	if (midev)
+		mctp_i2c_free_netdev(midev);
+}
+
+/* Determines whether a device is an i2c adapter.
+   Optionally returns the root i2c_adapter */
+static struct i2c_adapter *mctp_i2c_get_adapter(struct device *dev,
+	struct i2c_adapter **ret_root)
+{
+	struct i2c_adapter *root, *adap;
+
+	if (dev->type != &i2c_adapter_type)
+		return NULL;
+	adap = to_i2c_adapter(dev);
+	root = i2c_root_adapter(dev);
+	WARN_ONCE(!root, "%s failed to find root adapter for %s\n",
+		__func__, dev_name(dev));
+	if (!root)
+		return NULL;
+	if (ret_root)
+		*ret_root = root;
+	return adap;
+}
+
+/* Determines whether a device is an i2c adapter with
+   the "mctp-controller" devicetree property set.
+   If adap is not an OF node, returns match_no_of */
+static bool mctp_i2c_adapter_match(struct i2c_adapter *adap, bool match_no_of)
+{
+	if (!adap->dev.of_node)
+		return match_no_of;
+	return of_property_read_bool(adap->dev.of_node, MCTP_I2C_OF_PROP);
+}
+
+// Called for each existing i2c device when a new mctp-i2c client is probed
+static int mctp_i2c_client_try_attach(struct device *dev, void* data)
+{
+	struct i2c_adapter *adap = NULL, *root = NULL;
+	struct mctp_i2c_client *mcli = data;
+
+	adap = mctp_i2c_get_adapter(dev, &root);
+	if (!adap)
+		return 0;
+	if (mcli->client->adapter != root)
+		return 0;
+	// Must either have mctp-controller property on the adapter, or
+	// be a root adapter if it's non-devicetree
+	if (!mctp_i2c_adapter_match(adap, adap == root))
+		return 0;
+
+	return mctp_i2c_add_netdev(mcli, adap);
+}
+
+// Called when a new i2c device is attached
+static void mctp_i2c_notify_add(struct device *dev)
+{
+	struct mctp_i2c_client *mcli = NULL, *m = NULL;
+	struct i2c_adapter *root = NULL, *adap = NULL;
+	int rc;
+
+	adap = mctp_i2c_get_adapter(dev, &root);
+	if (!adap)
+		return;
+	// Check for mctp-controller property on the adapter
+	if (!mctp_i2c_adapter_match(adap, false))
+		return;
+
+	/* Find an existing mcli for adap's root */
+	mutex_lock(&mi_driver_state.lock);
+	list_for_each_entry(m, &mi_driver_state.clients, list) {
+		if (m->client->adapter == root) {
+			mcli = m;
+			break;
+		}
+	}
+
+	if (mcli) {
+		rc = mctp_i2c_add_netdev(mcli, adap);
+		if (rc)
+			dev_warn(dev, "%s Failed adding mctp-i2c device",
+				 __func__);
+	}
+	mutex_unlock(&mi_driver_state.lock);
+}
+
+static void mctp_i2c_notify_del(struct device *dev)
+{
+	struct i2c_adapter *root = NULL, *adap = NULL;
+	struct mctp_i2c_client *mcli = NULL;
+
+	adap = mctp_i2c_get_adapter(dev, &root);
+	if (!adap)
+		return;
+
+	mutex_lock(&mi_driver_state.lock);
+	list_for_each_entry(mcli, &mi_driver_state.clients, list) {
+		if (mcli->client->adapter == root) {
+			mctp_i2c_remove_netdev(mcli, adap);
+			break;
+		}
+	}
+	mutex_unlock(&mi_driver_state.lock);
 }
 
 static int mctp_i2c_probe(struct i2c_client *client)
@@ -467,41 +672,62 @@ static int mctp_i2c_probe(struct i2c_client *client)
 		return -EOPNOTSUPP;
 	}
 
-	if (client->adapter->dev.of_node &&
-	    !mctp_i2c_adapter_match(&client->adapter->dev, NULL)) {
-		dev_info(&client->dev,
-			"Not attaching, %s property is not set on I2C adapter %s",
-			MCTP_I2C_OF_PROP, dev_name(&client->adapter->dev));
-		return -ENODEV;
-	}
-
+	mutex_lock(&mi_driver_state.lock);
 	mcli = mctp_i2c_new_client(client);
 	if (IS_ERR(mcli)) {
 		rc = PTR_ERR(mcli);
 		mcli = NULL;
-		goto err;
+		goto out;
+	} else {
+		list_add(&mcli->list, &mi_driver_state.clients);
 	}
 
-	rc = mctp_i2c_add_netdev(mcli, client->adapter);
-	if (rc < 0)
-		goto err;
-
-	return 0;
-err:
-	if (mcli)
-		mctp_i2c_free_client(mcli);
+	// Add a netdev for adapters
+	i2c_for_each_dev(mcli, mctp_i2c_client_try_attach);
+	rc = 0;
+out:
+	mutex_unlock(&mi_driver_state.lock);
 	return rc;
 }
 
 static int mctp_i2c_remove(struct i2c_client *client)
 {
 	struct mctp_i2c_client *mcli = i2c_get_clientdata(client);
+	struct mctp_i2c_dev *midev = NULL, *tmp = NULL;
 
-	mctp_i2c_free_netdev(mcli->dev);
+	mutex_lock(&mi_driver_state.lock);
+	list_del(&mcli->list);
+	// Remove all child adapter netdevs
+	list_for_each_entry_safe(midev, tmp, &mcli->devs, list)
+		mctp_i2c_free_netdev(midev);
+	// Remove own netdev
+	mctp_i2c_remove_netdev(mcli, client->adapter);
+
 	mctp_i2c_free_client(mcli);
+	mutex_unlock(&mi_driver_state.lock);
 	// Callers ignore return code
 	return 0;
 }
+
+static int mctp_i2c_notifier_call(struct notifier_block *nb,
+	unsigned long action, void *data)
+{
+	struct device *dev = data;
+
+	switch (action) {
+		case BUS_NOTIFY_ADD_DEVICE:
+			mctp_i2c_notify_add(dev);
+			break;
+		case BUS_NOTIFY_DEL_DEVICE:
+			mctp_i2c_notify_del(dev);
+			break;
+	}
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block mctp_i2c_notifier = {
+	.notifier_call = mctp_i2c_notifier_call,
+};
 
 static const struct i2c_device_id mctp_i2c_id[] = {
 	{ "mctp-i2c", 0 },
@@ -529,15 +755,27 @@ static __init int mctp_i2c_init(void)
 {
 	int rc;
 
+	INIT_LIST_HEAD(&mi_driver_state.clients);
+	mutex_init(&mi_driver_state.lock);
 	pr_info("MCTP SMBus/I2C transport driver\n");
 	rc = i2c_add_driver(&mctp_i2c_driver);
 	if (rc)
 		return rc;
+	rc = bus_register_notifier(&i2c_bus_type, &mctp_i2c_notifier);
+	if (rc) {
+		i2c_del_driver(&mctp_i2c_driver);
+		return rc;
+	}
 	return 0;
 }
 
 static __exit void mctp_i2c_exit(void)
 {
+	int rc;
+
+	rc = bus_unregister_notifier(&i2c_bus_type, &mctp_i2c_notifier);
+	if (rc)
+		pr_warn("%s Could not unregister notifier, %d", __func__, rc);
 	i2c_del_driver(&mctp_i2c_driver);
 }
 
