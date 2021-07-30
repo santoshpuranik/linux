@@ -92,6 +92,10 @@ wants to support one of the below features, it should adapt these bindings.
 	Examples of features are SMBusHostNotify and SMBusAlert. Examples of
 	restrictions are more reserved addresses and timeout definitions.
 
+- mctp-controller
+	indicates that the system is accessible via this bus as an endpoint for
+	MCTP over I2C transport.
+
 Required properties (per child device)
 --------------------------------------
 
