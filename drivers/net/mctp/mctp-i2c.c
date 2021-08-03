@@ -201,6 +201,7 @@ static int mctp_i2c_recv(struct mctp_i2c_dev *midev)
 {
 	struct net_device *ndev = midev->ndev;
 	struct mctp_i2c_hdr *hdr;
+	struct mctp_skb_cb *cb;
 	struct sk_buff *skb;
 	u8 pec, calc_pec;
 	size_t recvlen;
@@ -225,8 +226,6 @@ static int mctp_i2c_recv(struct mctp_i2c_dev *midev)
 		return -EINVAL;
 	}
 
-	// TODO: do we need to validate dest addr?
-
 	skb = netdev_alloc_skb(ndev, recvlen);
 	if (!skb) {
 		ndev->stats.rx_dropped++;
@@ -238,7 +237,10 @@ static int mctp_i2c_recv(struct mctp_i2c_dev *midev)
 	skb_reset_mac_header(skb);
 	skb_pull(skb, sizeof(struct mctp_i2c_hdr));
 	skb_reset_network_header(skb);
-	__mctp_cb(skb);
+
+	cb = __mctp_cb(skb);
+	cb->halen = 1;
+	cb->haddr[0] = hdr->source_slave;
 
 	if (netif_receive_skb(skb) == NET_RX_SUCCESS) {
 		ndev->stats.rx_packets++;
