@@ -24,19 +24,19 @@
 #define BT_IO_BASE	0xe4
 #define BT_IRQ		10
 
-#define BT_CR0		0x0
+#define ASPEED_BT_CR0	0x0
 #define   BT_CR0_IO_BASE		16
 #define   BT_CR0_IRQ			12
 #define   BT_CR0_EN_CLR_SLV_RDP		0x8
 #define   BT_CR0_EN_CLR_SLV_WRP		0x4
 #define   BT_CR0_ENABLE_IBT		0x1
-#define BT_CR1		0x4
+#define ASPEED_BT_CR1	0x4
 #define   BT_CR1_IRQ_H2B	0x01
 #define   BT_CR1_IRQ_HBUSY	0x40
-#define BT_CR2		0x8
+#define ASPEED_BT_CR2	0x8
 #define   BT_CR2_IRQ_H2B	0x01
 #define   BT_CR2_IRQ_HBUSY	0x40
-#define BT_CR3		0xc
+#define ASPEED_BT_CR3	0xc
 
 #define BT_CTRL		0x10
 #define   BT_CTRL_B_BUSY		0x80
@@ -360,14 +360,14 @@ static irqreturn_t aspeed_bt_bmc_irq(int irq, void *arg)
 	struct bt_bmc *bt_bmc = arg;
 	u32 reg;
 
-	reg = readl(bt_bmc->base + BT_CR2);
+	reg = readl(bt_bmc->base + ASPEED_BT_CR2);
 
 	reg &= BT_CR2_IRQ_H2B | BT_CR2_IRQ_HBUSY;
 	if (!reg)
 		return IRQ_NONE;
 
 	/* ack pending IRQs */
-	writel(reg, bt_bmc->base + BT_CR2);
+	writel(reg, bt_bmc->base + ASPEED_BT_CR2);
 
 	wake_up(&bt_bmc->queue);
 	return IRQ_HANDLED;
@@ -398,9 +398,9 @@ static int aspeed_bt_bmc_config_irq(struct bt_bmc *bt_bmc,
 	 * will be cleared (along with B2H) when we can write the next
 	 * message to the BT buffer
 	 */
-	reg = readl(bt_bmc->base + BT_CR1);
+	reg = readl(bt_bmc->base + ASPEED_BT_CR1);
 	reg |= BT_CR1_IRQ_H2B | BT_CR1_IRQ_HBUSY;
-	writel(reg, bt_bmc->base + BT_CR1);
+	writel(reg, bt_bmc->base + ASPEED_BT_CR1);
 
 	return 0;
 }
@@ -412,7 +412,7 @@ static void aspeed_enable_bt(struct bt_bmc *bt_bmc)
 		     BT_CR0_EN_CLR_SLV_RDP |
 		     BT_CR0_EN_CLR_SLV_WRP |
 		     BT_CR0_ENABLE_IBT,
-		bt_bmc->base + BT_CR0);
+		bt_bmc->base + ASPEED_BT_CR0);
 }
 
 static int bt_bmc_probe(struct platform_device *pdev)
