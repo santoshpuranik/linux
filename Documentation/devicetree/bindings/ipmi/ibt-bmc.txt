@@ -10,6 +10,7 @@ Required properties:
 	"aspeed,ast2400-ibt-bmc"
 	"aspeed,ast2500-ibt-bmc"
 	"aspeed,ast2600-ibt-bmc"
+	"ibm,microwatt-ibt-bmc"
 - reg: physical address and size of the registers
 
 Optional properties:
