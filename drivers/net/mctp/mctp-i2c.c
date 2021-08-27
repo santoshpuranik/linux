@@ -184,7 +184,7 @@ static int mctp_i2c_slave_cb(struct i2c_client *client,
 		break;
 	case I2C_SLAVE_WRITE_REQUESTED:
 		/* dest_slave as first byte */
-		midev->buffer[0] = *val;
+		midev->buffer[0] = mcli->lladdr << 1;
 		midev->pos = 1;
 		break;
 	case I2C_SLAVE_STOP:
