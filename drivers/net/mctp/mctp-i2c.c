@@ -272,8 +272,8 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 			    I2C_SMBUS_WRITE, hdr->command, I2C_SMBUS_BLOCK_DATA,
 		(void *)&hdr->byte_count);
 	if (rc) {
-		dev_dbg(&midev->adapter->dev, "%s i2c_smbus_xfer failed %d",
-			__func__, rc);
+		dev_warn_ratelimited(&midev->adapter->dev,
+			"%s i2c_smbus_xfer failed %d", __func__, rc);
 		stats->tx_errors++;
 	}
 }
