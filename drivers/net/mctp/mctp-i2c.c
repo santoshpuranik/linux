@@ -76,8 +76,8 @@ static int mctp_i2c_recv(struct mctp_i2c_dev *midev);
 static int mctp_i2c_slave_cb(struct i2c_client *client,
 			     enum i2c_slave_event event, u8 *val);
 
-ssize_t mctp_current_mux_show(struct device *dev, struct device_attribute *attr,
-		char *buf)
+static ssize_t mctp_current_mux_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
 {
 	struct mctp_i2c_client *mcli = i2c_get_clientdata(to_i2c_client(dev));
 	struct net_device *ndev = NULL;
@@ -95,7 +95,7 @@ ssize_t mctp_current_mux_show(struct device *dev, struct device_attribute *attr,
 		dev_put(ndev);
 	return l;
 }
-DEVICE_ATTR_RO(mctp_current_mux);
+static DEVICE_ATTR_RO(mctp_current_mux);
 
 /* Creates a new i2c slave device attached to the root adapter.
  * Sets up the slave callback.
