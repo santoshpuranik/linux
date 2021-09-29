@@ -48,8 +48,8 @@ struct mctp_i2c_dev {
 	size_t pos;
 	u8 buffer[MCTP_I2C_RXBUFSZ];
 
-	struct workqueue_struct *tx_wq;
-	struct work_struct tx_work;
+	struct task_struct *tx_thread;
+	wait_queue_head_t tx_wq;
 	struct sk_buff_head tx_queue;
 };
 
@@ -365,28 +365,33 @@ static int mctp_i2c_header_create(struct sk_buff *skb, struct net_device *dev,
 	return 0;
 }
 
-static void mctp_i2c_tx_dowork(struct work_struct *ws)
+static int mctp_i2c_tx_thread(void *data)
 {
-	struct mctp_i2c_dev *midev = container_of(ws,
-		struct mctp_i2c_dev, tx_work);
+	struct mctp_i2c_dev *midev = data;
 	struct sk_buff *skb;
 	unsigned long flags;
 
-	while (1) {
+	for (;;) {
+		if (kthread_should_stop())
+			break;
+
 		spin_lock_irqsave(&midev->tx_queue.lock, flags);
 		skb = __skb_dequeue(&midev->tx_queue);
-		if (!skb) {
-			spin_unlock_irqrestore(&midev->tx_queue.lock, flags);
-			return;
-		}
-
 		if (netif_queue_stopped(midev->ndev))
 			netif_wake_queue(midev->ndev);
 		spin_unlock_irqrestore(&midev->tx_queue.lock, flags);
 
-		mctp_i2c_xmit(midev, skb);
-		kfree_skb(skb);
+		if (skb) {
+			mctp_i2c_xmit(midev, skb);
+			kfree_skb(skb);
+
+		} else {
+			wait_event(midev->tx_wq,
+				   !skb_queue_empty(&midev->tx_queue));
+		}
 	}
+
+	return 0;
 }
 
 static netdev_tx_t mctp_i2c_start_xmit(struct sk_buff *skb,
@@ -407,7 +412,8 @@ static netdev_tx_t mctp_i2c_start_xmit(struct sk_buff *skb,
 	if (skb_queue_len(&midev->tx_queue) == MCTP_I2C_TX_WORK_LEN)
 		netif_stop_queue(dev);
 	spin_unlock_irqrestore(&midev->tx_queue.lock, flags);
-	queue_work(midev->tx_wq, &midev->tx_work);
+
+	wake_up(&midev->tx_wq);
 	return NETDEV_TX_OK;
 }
 
@@ -470,7 +476,6 @@ static int mctp_i2c_add_netdev(struct mctp_i2c_client *mcli,
 	ndev->dev_addr = &mcli->lladdr;
 
 	midev = netdev_priv(ndev);
-	INIT_WORK(&midev->tx_work, mctp_i2c_tx_dowork);
 	skb_queue_head_init(&midev->tx_queue);
 	INIT_LIST_HEAD(&midev->list);
 	midev->adapter = adap;
@@ -479,11 +484,12 @@ static int mctp_i2c_add_netdev(struct mctp_i2c_client *mcli,
 	get_device(&midev->adapter->dev);
 	get_device(&midev->client->client->dev);
 	midev->ndev = ndev;
-	midev->tx_wq = alloc_ordered_workqueue("%s_tx", WQ_FREEZABLE,
-					       ndev->name);
-	if (!midev->tx_wq) {
+	init_waitqueue_head(&midev->tx_wq);
+	midev->tx_thread = kthread_create(mctp_i2c_tx_thread, midev,
+					  "%s/tx", namebuf);
+	if (IS_ERR_OR_NULL(midev->tx_thread)) {
 		rc = -ENOMEM;
-		goto err;
+		goto err_free;
 	}
 
 	rc = register_netdev(ndev);
@@ -491,7 +497,7 @@ static int mctp_i2c_add_netdev(struct mctp_i2c_client *mcli,
 		dev_err(&mcli->client->dev,
 			"%s register netdev \"%s\" failed %d\n", __func__,
 			ndev->name, rc);
-		goto err;
+		goto err_stop_kthread;
 	}
 	spin_lock_irqsave(&mcli->curr_lock, flags);
 	list_add(&midev->list, &mcli->devs);
@@ -500,14 +506,17 @@ static int mctp_i2c_add_netdev(struct mctp_i2c_client *mcli,
 		__mctp_i2c_device_select(mcli, midev);
 	spin_unlock_irqrestore(&mcli->curr_lock, flags);
 
+	wake_up_process(midev->tx_thread);
+
 	return 0;
+
+err_stop_kthread:
+	kthread_stop(midev->tx_thread);
+
+err_free:
+	free_netdev(ndev);
+
 err:
-	if (midev && midev->tx_wq)
-		destroy_workqueue(midev->tx_wq);
-
-	if (ndev)
-		free_netdev(ndev);
-
 	return rc;
 }
 
@@ -516,10 +525,9 @@ static void mctp_i2c_free_netdev(struct mctp_i2c_dev *midev)
 	struct mctp_i2c_client *mcli = midev->client;
 	unsigned long flags;
 
-	/* Flush TX to i2c */
 	netif_stop_queue(midev->ndev);
-	destroy_workqueue(midev->tx_wq);
-	WARN_ON(!skb_queue_empty(&midev->tx_queue));
+	kthread_stop(midev->tx_thread);
+	skb_queue_purge(&midev->tx_queue);
 
 	/* Release references, used only for TX which has stopped */
 	put_device(&midev->adapter->dev);
