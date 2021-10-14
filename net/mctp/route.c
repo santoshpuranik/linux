@@ -371,6 +371,7 @@ static int mctp_route_input(struct mctp_route *route, struct sk_buff *skb)
 			trace_mctp_key_acquire(key);
 
 			/* we don't need to release key->lock on exit */
+			mctp_key_unref(key);
 			key = NULL;
 
 		} else {
@@ -583,6 +584,9 @@ static int mctp_alloc_local_tag(struct mctp_sock *msk,
 		trace_mctp_key_acquire(key);
 
 		*tagp = key->tag;
+		/* done with the key in this scope */
+		mctp_key_unref(key);
+		key = NULL;
 		rc = 0;
 	}
 
