@@ -345,10 +345,16 @@ static int mctp_i2c_header_create(struct sk_buff *skb, struct net_device *dev,
 	struct mctp_hdr *mhdr;
 	u8 lldst, llsrc;
 
-	lldst = *((u8 *)daddr);
-	llsrc = *((u8 *)saddr);
-
 	// TODO: check for broadcast daddr? other addr sanity checks?
+	if (daddr)
+		lldst = *((u8 *)daddr);
+	else
+		return -EHOSTUNREACH;
+
+	if (saddr)
+		llsrc = *((u8 *)saddr);
+	else
+		llsrc = *dev->dev_addr;
 
 	skb_push(skb, sizeof(struct mctp_i2c_hdr));
 	skb_reset_mac_header(skb);
