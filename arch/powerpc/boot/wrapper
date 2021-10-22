@@ -484,7 +484,13 @@ addsec() {
 	--set-section-flags=$3=contents,alloc,load,readonly,data
 }
 
-addsec $tmp "$vmz" $ksection $object/empty.o
+if [ -n "$MATT_NO_VMLINUZ" ]; then
+    # when debugging only early boot
+    echo "Omitting vmlinuz from output, early boot only"
+    addsec $tmp /dev/null $ksection $object/empty.o
+else
+    addsec $tmp "$vmz" $ksection $object/empty.o
+fi
 if [ -z "$cacheit" ]; then
     rm -f "$vmz"
 fi
