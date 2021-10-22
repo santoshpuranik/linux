@@ -345,7 +345,7 @@ gamecube|wii)
     platformo="$object/$platform-head.o $object/$platform.o"
     ;;
 microwatt)
-    link_address='0x500000'
+    link_address='0x800000'
     platformo="$object/fixed-head.o $object/$platform.o"
     binary=y
     ;;
