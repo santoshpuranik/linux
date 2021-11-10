@@ -124,7 +124,7 @@ static int mctp_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 		DECLARE_SOCKADDR(struct sockaddr_mctp_ext *,
 				 extaddr, msg->msg_name);
 
-		if (extaddr->smctp_halen > MCTP_SKB_CB_HADDR_MAXLEN) {
+		if (extaddr->smctp_halen > sizeof(cb->haddr)) {
 			rc = -EINVAL;
 			goto err_free;
 		}

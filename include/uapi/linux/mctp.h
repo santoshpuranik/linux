@@ -32,8 +32,9 @@ struct sockaddr_mctp {
 struct sockaddr_mctp_ext {
 	struct sockaddr_mctp	smctp_base;
 	int			smctp_ifindex;
-	unsigned char		smctp_halen;
-	unsigned char		smctp_haddr[MAX_ADDR_LEN];
+	__u8			smctp_halen;
+	__u8			__smctp_pad0[3];
+	__u8			smctp_haddr[MAX_ADDR_LEN];
 };
 
 #define MCTP_NET_ANY		0x0
@@ -43,9 +44,6 @@ struct sockaddr_mctp_ext {
 
 #define MCTP_TAG_MASK		0x07
 #define MCTP_TAG_OWNER		0x08
-
-/* setsockopt(2) level & options */
-#define SOL_MCTP		0
 
 #define MCTP_OPT_ADDR_EXT	1
 
