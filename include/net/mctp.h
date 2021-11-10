@@ -11,6 +11,7 @@
 
 #include <linux/bits.h>
 #include <linux/mctp.h>
+#include <linux/netdevice.h>
 #include <net/net_namespace.h>
 #include <net/sock.h>
 
@@ -161,15 +162,12 @@ struct mctp_sk_key {
 
 struct mctp_skb_cb {
 	unsigned int	magic;
-	int		net;
+	unsigned int	net;
 	int		ifindex; /* extended/direct addressing if set */
-	unsigned char	halen;
 	mctp_eid_t	src;
-	unsigned char	haddr[];
+	unsigned char	halen;
+	unsigned char	haddr[MAX_ADDR_LEN];
 };
-
-#define MCTP_SKB_CB_HADDR_MAXLEN (sizeof((((struct sk_buff *)(NULL))->cb)) \
-				  - offsetof(struct mctp_skb_cb, haddr))
 
 /* skb control-block accessors with a little extra debugging for initial
  * development.
@@ -192,6 +190,7 @@ static inline struct mctp_skb_cb *mctp_cb(struct sk_buff *skb)
 {
 	struct mctp_skb_cb *cb = (void *)skb->cb;
 
+	BUILD_BUG_ON(sizeof(struct mctp_skb_cb) > sizeof(skb->cb));
 	WARN_ON(cb->magic != 0x4d435450);
 	return (void *)(skb->cb);
 }

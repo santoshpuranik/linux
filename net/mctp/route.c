@@ -797,6 +797,8 @@ int mctp_local_output(struct sock *sk, struct mctp_route *rt,
 	int rc;
 	u8 tag;
 
+	rc = -ENODEV;
+
 	if (rt) {
 		ext_rt = false;
 		dev = NULL;
@@ -808,7 +810,6 @@ int mctp_local_output(struct sock *sk, struct mctp_route *rt,
 		ext_rt = true;
 		rt = &tmp_rt;
 
-		rc = -ENODEV;
 		rcu_read_lock();
 		dev = dev_get_by_index_rcu(sock_net(sk), cb->ifindex);
 		if (!dev) {
