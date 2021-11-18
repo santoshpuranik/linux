@@ -136,6 +136,10 @@ int serial_console_init(void)
 	else if (dt_is_compatible(devp, "ibm,opal-console-raw"))
 		rc = opal_console_init(devp, &serial_cd);
 #endif
+#ifdef CONFIG_PPC_MICROWATT
+	else if (dt_is_compatible(devp, "litex,liteuart"))
+		rc = liteuart_console_init(devp, &serial_cd);
+#endif
 
 	/* Add other serial console driver calls here */
 
