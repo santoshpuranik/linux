@@ -363,6 +363,7 @@ image-$(CONFIG_MVME5100)		+= dtbImage.mvme5100
 image-$(CONFIG_AMIGAONE)		+= cuImage.amigaone
 
 image-$(CONFIG_PPC_MICROWATT)		+= dtbImage.microwatt
+image-$(CONFIG_PPC_MICROWATT)		+= dtbImage.microwatt-oc02
 
 # For 32-bit powermacs, build the COFF and miboot images
 # as well as the ELF images.
