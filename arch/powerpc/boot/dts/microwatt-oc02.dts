@@ -121,7 +121,7 @@
 		};
 
 		spi@6000 {
-			compatible = "litex,litespi";
+			compatible = "openpower,microwatt-spi";
 			reg = <0x6000     0x100
 			       0x30000000 0x8000000 >;
 			#address-cells = <1>;
@@ -136,25 +136,32 @@
 					#address-cells = <1>;
 					#size-cells = <1>;
 
-					sdram-init@0 {
-						 reg = <0x0 0x100000>;
-						 label = "sdram-init";
+					foboot@0 {
+						// OrangeCrab foboot
+						reg = <0x0 0x80000>; // 512kB
+						label = "foboot-oc-dfu";
 					};
 
-					spare@100000 {
-						 reg = <0x100000 0x300000>;
-						 label = "spare";
+					gateware@0 {
+						reg = <0x80000 0x380000>; // 3.5M
+						label = "gateware";
 					};
 
-					kernel@400000 {
-						 reg = <0x400000 0x800000>;
-						 label = "kernel";
+					elf@400000 {
+						reg = <0x400000 0x600000>; // 6M
+						label = "u-boot";
 					};
 
-					spare2@c00000 {
-						 reg = <0xc00000 0x400000>;
-						 label = "spare2";
+					spare@a00000 {
+						reg = <0xa00000 0x5f0000>; // 5.9M
+						label = "spare";
 					};
+
+					u-boot-env@400000 {
+						reg = <0xff0000 0x10000>; // 64K
+						label = "u-boot-env";
+					};
+
 				};
 			};
 		};
@@ -170,7 +177,7 @@
 			interrupts = <0x10 0x1>;
 		};
 
-		UARTUSB: usbserial@2000 {
+		UARTUSB: usbserial@8000 {
 			device_type = "serial";
 			compatible = "litex,liteuart";
 			reg = <0x8000 0x100>;
@@ -188,6 +195,18 @@
 		// 	litex,slot-size = <0x800>;
 		// 	interrupts = <0x11 0x1>;
 		// };
+
+		litex-mmc@40000 {
+			compatible = "litex,mmc";
+			reg = <0x42800 0x800
+			       0x41000 0x800
+			       0x40800 0x800
+			       0x42000 0x800
+			       0x41800 0x800>;
+			bus-width = <4>;
+			interrupts = <0x13 1>;
+			cap-sd-highspeed;
+		};
 	};
 
 	chosen {
