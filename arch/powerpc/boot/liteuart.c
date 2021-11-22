@@ -80,11 +80,6 @@ static int uart_init(void)
 {
 	uart_ev_pending_write(uart_ev_pending_read());
 	uart_ev_enable_write(UART_EV_TX | UART_EV_RX);
-
-	for (int i = 0; i < 0x14; i+= 4) {
-		uint32_t v = in_be32(uart_base + i);
-		printf("0x%02x = %x\n", i, v);
-	}
 	return 0;
 }
 
