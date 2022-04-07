@@ -21,7 +21,7 @@
 
 	memory@0 {
 		device_type = "memory";
-		reg = <0x00000000 0x00000000 0x00000000 0x20000000>;
+		reg = <0x00000000 0x00000000 0x00000000 0x10000000>;
 	};
 
 	cpus {
@@ -132,7 +132,7 @@
 				spi-max-frequency = <50000000>;
 				status = "ok";
 				partitions {
-					compatible = "fixed-partitions";
+						compatible = "fixed-partitions";
 					#address-cells = <1>;
 					#size-cells = <1>;
 
@@ -142,14 +142,14 @@
 						label = "foboot-oc-dfu";
 					};
 
-					gateware@0 {
+					gateware@80000 {
 						reg = <0x80000 0x380000>; // 3.5M
 						label = "gateware";
 					};
 
 					elf@400000 {
 						reg = <0x400000 0x600000>; // 6M
-						label = "u-boot";
+						label = "elf";
 					};
 
 					initramfs@a00000 {
@@ -182,24 +182,24 @@
 			interrupts = <0x10 0x1>;
 		};
 
-		UARTUSB: usbserial@8000 {
-			device_type = "serial";
-			compatible = "litex,liteuart";
-			reg = <0x8000 0x100>;
-			interrupts = <0x15 0x1>;
-		};
-
-		// ethernet@8020000 {
-		// 	compatible = "litex,liteeth";
-		// 	reg = <0x8021000 0x100
-		// 		0x8020800 0x100
-		// 		0x8030000 0x2000>;
-		// 	reg-names = "mac", "mido", "buffer";
-		// 	litex,rx-slots = <2>;
-		// 	litex,tx-slots = <2>;
-		// 	litex,slot-size = <0x800>;
-		// 	interrupts = <0x11 0x1>;
+		// UARTUSB: usbserial@8000 {
+		// 	device_type = "serial";
+		// 	compatible = "litex,liteuart";
+		// 	reg = <0x8000 0x100>;
+		// 	interrupts = <0x15 0x1>;
 		// };
+
+		ethernet@8020000 {
+			compatible = "litex,liteeth";
+			reg = <0x8021000 0x100
+				0x8020800 0x100
+				0x8030000 0x2000>;
+			reg-names = "mac", "mido", "buffer";
+			litex,rx-slots = <2>;
+			litex,tx-slots = <2>;
+			litex,slot-size = <0x800>;
+			interrupts = <0x11 0x1>;
+		};
 
 		litex-mmc@8040000 {
 			compatible = "litex,mmc";
@@ -215,8 +215,14 @@
 	};
 
 	chosen {
+		// stdout-path = &UARTUSB;
 		stdout-path = &UART0;
 		bootargs = "";
+		// bootargs = "initcall_debug debug";
+		// bootargs = "root=/dev/mtdblock4 rw rootfstype=jffs2";
+		// bootargs = "dyndbg=\"file drivers/of/* +p\"";
+		// linux,initrd-start = <0xf0a00000>;
+		// linux,initrd-end = <0xf0bab6ec>;
 		ibm,architecture-vec-5 = [19 00 10 00 00 00 00 00 00 00 00 00 00 00 00 00
 					  00 00 00 00 00 00 00 00 40 00 40];
 	};
