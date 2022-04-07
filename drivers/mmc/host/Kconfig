@@ -1097,5 +1097,6 @@ config MMC_SDHCI_EXTERNAL_DMA
 config MMC_LITEX
 	tristate "Support for the MMC Controller in LiteX SOCs"
 	depends on OF
+	depends on LITEX
 	help
 	  Generic MCC driver for LiteX

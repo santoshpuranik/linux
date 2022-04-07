@@ -40,6 +40,7 @@ static inline u32 _read_litex_subregister(void __iomem *addr)
 
 static inline void litex_write8(void __iomem *reg, u8 val)
 {
+        BUILD_BUG_ON_MSG(!CONFIG_LITEX, "Drivers using litex.h must depend on Kconfig LITEX");
 	_write_litex_subregister(val, reg);
 }
 
