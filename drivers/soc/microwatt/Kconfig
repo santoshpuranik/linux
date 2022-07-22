@@ -1,0 +1,18 @@
+
+# SPDX-License-Identifier: GPL-2.0-only
+
+if PPC_MICROWATT || COMPILE_TEST
+
+menu "Microwatt SoC drivers"
+
+config MICROWATT_LPC_CTRL
+	tristate "Microwatt LPC firmware cycle control"
+	default PPC_MICROWATT
+	help
+	  Control LPC firmware cycle mappings through ioctl()s. The driver
+	  also provides a read/write interface to a BMC ram region where the
+	  host LPC read/write region can be buffered.
+
+endmenu
+
+endif
