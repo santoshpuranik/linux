@@ -159,7 +159,7 @@
 
 					extra@800000 {
 						reg = <0x800000 0x600000>; // 6M
-						label = "initramfs";
+						label = "extra";
 					};
 
 					spare2@e00000 {
