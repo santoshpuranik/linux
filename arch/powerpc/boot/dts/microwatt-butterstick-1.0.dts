@@ -239,7 +239,7 @@
 	chosen {
 		// stdout-path = &UARTUSB;
 		stdout-path = &UART0;
-		bootargs = "initcall_debug debug";
+		bootargs = "";
 		//bootargs = "root=/dev/mtdblock4 rw rootfstype=jffs2";
 		// bootargs = "dyndbg=\"file drivers/of/* +p\"";
 		// linux,initrd-start = <0xf0a00000>;
