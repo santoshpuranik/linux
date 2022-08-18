@@ -191,6 +191,15 @@
 			interrupts = <0x13 1>;
 			cap-sd-highspeed;
 		};
+		gpio@7000 {
+			compatible = "microwatt,gpio";
+			// microwatt also has GPIO_REG_DATA_OUT but the driver
+			// doesn't use that.
+			reg-names = "dat", "dirout", "set", "clr";
+			reg = <0x7004 4 0x7008 4 0x7010 4 0x7014 4>;
+			// no interrupt connected in gateware
+		};
+
 	};
 
 	chosen {
