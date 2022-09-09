@@ -405,6 +405,16 @@ config GPIO_MENZ127
 	help
 	  Say yes here to support the MEN 16Z127 GPIO Controller.
 
+config GPIO_MICROWATT
+	tristate "Microwatt GPIO support"
+	depends on OF_GPIO
+	depends on PPC_MICROWATT
+	select GPIO_GENERIC
+	select GPIOLIB_IRQCHIP
+	select REGMAP_MMIO
+	help
+	  Say yes here to support GPIO on the Microwatt SoC
+
 config GPIO_MM_LANTIQ
 	bool "Lantiq Memory mapped GPIOs"
 	depends on LANTIQ && SOC_XWAY

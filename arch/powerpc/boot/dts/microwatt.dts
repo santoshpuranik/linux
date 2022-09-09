@@ -203,6 +203,14 @@
 			clocks = <&sys_clk>;
 			cap-sd-highspeed;
 		};
+
+		gpio@7000 {
+			compatible = "openpower,microwatt-gpio";
+			gpio-controller;
+			reg = <0x7000 0x100>;
+			interrupts = <0x14 1>;
+			ngpios = <32>;
+		};
 	};
 
 	chosen {
