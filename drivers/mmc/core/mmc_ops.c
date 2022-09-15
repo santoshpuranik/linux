@@ -144,6 +144,43 @@ int mmc_set_dsr(struct mmc_host *host)
 	return mmc_wait_for_cmd(host, &cmd, MMC_CMD_RETRIES);
 }
 
+int mmc_go_pre_idle(struct mmc_host *host)
+{
+	int err;
+	struct mmc_command cmd = {};
+
+	/*
+	 * Non-SPI hosts need to prevent chipselect going active during
+	 * GO_IDLE; that would put chips into SPI mode.  Remind them of
+	 * that in case of hardware that won't pull up DAT3/nCS otherwise.
+	 *
+	 * SPI hosts ignore ios.chip_select; it's managed according to
+	 * rules that must accommodate non-MMC slaves which this layer
+	 * won't even know about.
+	 */
+	if (!mmc_host_is_spi(host)) {
+		mmc_set_chip_select(host, MMC_CS_HIGH);
+		mmc_delay(1);
+	}
+
+	cmd.opcode = MMC_GO_IDLE_STATE;
+	cmd.arg = 0xf0f0f0f0;
+	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_NONE | MMC_CMD_BC;
+
+	err = mmc_wait_for_cmd(host, &cmd, 0);
+
+	mmc_delay(1);
+
+	if (!mmc_host_is_spi(host)) {
+		mmc_set_chip_select(host, MMC_CS_DONTCARE);
+		mmc_delay(1);
+	}
+
+	host->use_spi_crc = 0;
+
+	return err;
+}
+
 int mmc_go_idle(struct mmc_host *host)
 {
 	int err;

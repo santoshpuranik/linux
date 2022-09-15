@@ -2060,6 +2060,10 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 	if (!(host->caps2 & MMC_CAP2_NO_SDIO))
 		sdio_reset(host);
 
+	pr_debug("go_pre_idle from rescan\n");
+	mmc_go_pre_idle(host);
+
+	pr_debug("go_idle from rescan\n");
 	mmc_go_idle(host);
 
 	if (!(host->caps2 & MMC_CAP2_NO_SD)) {
