@@ -236,13 +236,30 @@ static inline int send_app_cmd(struct litex_mmc_host *host) {
 
 // ACMD6
 static inline int send_app_set_bus_width_cmd(
-		struct litex_mmc_host *host, u32 width) {
+		struct litex_mmc_host *host, u32 width)
+{
 	return send_cmd(host, SD_APP_SET_BUS_WIDTH, width,
 			SDCARD_CTRL_RESPONSE_SHORT,
 			SDCARD_CTRL_DATA_TRANSFER_NONE);
 }
 
-static int litex_set_bus_width(struct litex_mmc_host *host) {
+static int litex_mmc_set_bus_width(struct litex_mmc_host *host)
+{
+	u32 arg;
+	int v;
+
+	arg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+		  (EXT_CSD_BUS_WIDTH << 16) |
+		  (EXT_CSD_BUS_WIDTH_4 << 8);
+
+	v = send_cmd(host, MMC_SWITCH, arg,
+			SDCARD_CTRL_RESPONSE_SHORT_BUSY,
+			SDCARD_CTRL_DATA_TRANSFER_NONE);
+	return v;
+}
+
+static int litex_sd_set_bus_width(struct litex_mmc_host *host)
+{
 	bool app_cmd_sent = host->app_cmd; /* was preceding command app_cmd? */
 	int status;
 
@@ -258,6 +275,14 @@ static int litex_set_bus_width(struct litex_mmc_host *host) {
 		send_app_cmd(host);
 
 	return status;
+}
+
+static int litex_set_bus_width(struct litex_mmc_host *host)
+{
+	if (host->mmc->caps2 & MMC_CAP2_NO_SD) {
+		return litex_mmc_set_bus_width(host);
+	}
+	return litex_sd_set_bus_width(host);
 }
 
 static int litex_get_cd(struct mmc_host *mmc)
@@ -645,7 +670,7 @@ static int litex_mmc_probe(struct platform_device *pdev)
 
 	/* add set-by-default capabilities */
 	mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY | MMC_CAP_DRIVER_TYPE_D |
-		MMC_CAP_CMD23;
+		MMC_CAP_4_BIT_DATA | MMC_CAP_CMD23;
 	/* default to "disable-wp", "full-pwr-cycle", "no-sdio" */
 	mmc->caps2 |= MMC_CAP2_NO_WRITE_PROTECT |
 		      MMC_CAP2_FULL_PWR_CYCLE |
