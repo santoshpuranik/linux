@@ -199,7 +199,22 @@ static int litex_mmc_send_set_bus_w_cmd(struct litex_mmc_host *host, u32 width)
 				  SD_CTL_RESP_SHORT, SD_CTL_DATA_XFER_NONE);
 }
 
-static int litex_mmc_set_bus_width(struct litex_mmc_host *host)
+static int litex_mmc_set_bus_width_mmc(struct litex_mmc_host *host)
+{
+	u32 arg;
+	int v;
+
+	arg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+		  (EXT_CSD_BUS_WIDTH << 16) |
+		  (EXT_CSD_BUS_WIDTH_4 << 8);
+
+	v = litex_mmc_send_cmd(host, MMC_SWITCH, arg,
+			SD_CTL_RESP_SHORT_BUSY,
+			SD_CTL_DATA_XFER_NONE);
+	return v;
+}
+
+static int litex_mmc_set_bus_width_sd(struct litex_mmc_host *host)
 {
 	bool app_cmd_sent;
 	int ret;
@@ -230,6 +245,14 @@ static int litex_mmc_set_bus_width(struct litex_mmc_host *host)
 	host->is_bus_width_set = true;
 
 	return 0;
+}
+
+static int litex_mmc_set_bus_width(struct litex_mmc_host *host)
+{
+	if (host->mmc->caps2 & MMC_CAP2_NO_SD) {
+		return litex_mmc_set_bus_width_mmc(host);
+	}
+	return litex_mmc_set_bus_width_sd(host);
 }
 
 static int litex_mmc_get_cd(struct mmc_host *mmc)
