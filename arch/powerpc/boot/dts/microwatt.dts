@@ -189,7 +189,8 @@
 			reg-names = "phy", "core", "reader", "writer", "irq";
 			bus-width = <4>;
 			interrupts = <0x13 1>;
-			cap-sd-highspeed;
+			cap-mmc-highspeed;
+			no-sd;
 		};
 		gpio@7000 {
 			compatible = "openpower,microwatt-gpio";
