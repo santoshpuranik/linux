@@ -660,7 +660,7 @@ static int litex_mmc_probe(struct platform_device *pdev)
 	mmc->ops = &litex_mmc_ops;
 
 	mmc->f_min = 12.5e6;
-	mmc->f_max = 50e6; // 50Mhz is max frequency sd card can support
+	mmc->f_max = 25e6; // dcscm is unreliable at 50mhz
 
 	ret = mmc_of_parse(mmc);
 	if (ret) {
