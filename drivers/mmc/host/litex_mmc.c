@@ -623,7 +623,7 @@ static int litex_mmc_probe(struct platform_device *pdev)
 	 * of LiteSDCard gateware behavior on typical SDCard media
 	 */
 	mmc->f_min = 12.5e6;
-	mmc->f_max = 50e6;
+	mmc->f_max = 25e6; // dcscm is unreliable at 50mhz
 
 	ret = mmc_of_parse(mmc);
 	if (ret)
