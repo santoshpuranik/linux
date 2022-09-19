@@ -360,6 +360,7 @@ image-$(CONFIG_AMIGAONE)		+= cuImage.amigaone
 image-$(CONFIG_PPC_MICROWATT)		+= dtbImage.microwatt
 image-$(CONFIG_PPC_MICROWATT)		+= dtbImage.microwatt-oc02
 image-$(CONFIG_PPC_MICROWATT)		+= dtbImage.microwatt-butterstick-1.0
+image-$(CONFIG_PPC_MICROWATT)		+= dtbImage.microwatt-dcscm
 
 # For 32-bit powermacs, build the COFF and miboot images
 # as well as the ELF images.
