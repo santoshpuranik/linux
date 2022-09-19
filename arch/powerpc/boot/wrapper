@@ -359,6 +359,11 @@ microwatt-butterstick-1.0)
     platformo="$object/fixed-head.o $object/microwatt.o"
     binary=y
     ;;
+microwatt-dcscm)
+    link_address='0x800000'
+    platformo="$object/fixed-head.o $object/microwatt.o"
+    binary=y
+    ;;
 treeboot-currituck)
     link_address='0x1000000'
     ;;
