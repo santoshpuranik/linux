@@ -364,6 +364,11 @@ microwatt-dcscm)
     platformo="$object/fixed-head.o $object/microwatt.o"
     binary=y
     ;;
+microwatt-dcscm-qemu)
+    link_address='0x800000'
+    platformo="$object/fixed-head.o $object/microwatt.o"
+    binary=y
+    ;;
 treeboot-currituck)
     link_address='0x1000000'
     ;;
