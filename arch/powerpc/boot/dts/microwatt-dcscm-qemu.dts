@@ -1,0 +1,29 @@
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/leds/leds-pca955x.h>
+#include "microwatt-dcscm.dts"
+
+/ {
+	model-name = "microwatt-dcscm-qemu";
+
+	soc@c0000000 {
+		litex-mmc@8040000 {
+			/delete-property/ no-sd;
+		};
+	};
+
+	chosen {
+		bootargs = "root=/dev/mmcblk0 rootdelay=1";
+	};
+};
+
+&i2c3  { status = "disabled"; };
+&i2c4  { status = "disabled"; };
+&i2c5  { status = "disabled"; };
+&i2c9  { status = "disabled"; };
+&i2c10 { status = "disabled"; };
+&i2c11 { status = "disabled"; };
+&i2c12 { status = "disabled"; };
+&i2c13 { status = "disabled"; };
+
