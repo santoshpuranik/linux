@@ -31,8 +31,10 @@ static void __init microwatt_init_IRQ(void)
 
 static void __noreturn microwatt_restart(char *cmd)
 {
-	if (syscon_base)
-		writel(SYSCON_CTRL_SOC_RESET, syscon_base);
+	if (syscon_base) {
+		u32 v = readl(syscon_base + SYSCON_CTRL);
+		writel(v | SYSCON_CTRL_SOC_RESET, syscon_base + SYSCON_CTRL);
+	}
 	for (;;)
 		;
 }
