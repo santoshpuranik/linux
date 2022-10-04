@@ -201,26 +201,19 @@ static int litex_mmc_send_set_bus_w_cmd(struct litex_mmc_host *host, u32 width)
 
 static int litex_mmc_set_bus_width_mmc(struct litex_mmc_host *host)
 {
-	u32 arg;
-	int v;
+	u32 arg = MMC_SWITCH_MODE_WRITE_BYTE << 24 |
+		  EXT_CSD_BUS_WIDTH << 16 |
+		  EXT_CSD_BUS_WIDTH_4 << 8;
 
-	arg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
-		  (EXT_CSD_BUS_WIDTH << 16) |
-		  (EXT_CSD_BUS_WIDTH_4 << 8);
-
-	v = litex_mmc_send_cmd(host, MMC_SWITCH, arg,
+	return litex_mmc_send_cmd(host, MMC_SWITCH, arg,
 			SD_CTL_RESP_SHORT_BUSY,
 			SD_CTL_DATA_XFER_NONE);
-	return v;
 }
 
 static int litex_mmc_set_bus_width_sd(struct litex_mmc_host *host)
 {
 	bool app_cmd_sent;
 	int ret;
-
-	if (host->is_bus_width_set)
-		return 0;
 
 	/* Ensure 'app_cmd' precedes 'app_set_bus_width_cmd' */
 	app_cmd_sent = host->app_cmd; /* was preceding command app_cmd? */
@@ -242,17 +235,25 @@ static int litex_mmc_set_bus_width_sd(struct litex_mmc_host *host)
 			return ret;
 	}
 
-	host->is_bus_width_set = true;
-
 	return 0;
 }
 
 static int litex_mmc_set_bus_width(struct litex_mmc_host *host)
 {
+	int ret;
+
+	if (host->is_bus_width_set)
+		return 0;
+
 	if (host->mmc->caps2 & MMC_CAP2_NO_SD) {
-		return litex_mmc_set_bus_width_mmc(host);
+		ret = litex_mmc_set_bus_width_mmc(host);
+	} else {
+		ret = litex_mmc_set_bus_width_sd(host);
 	}
-	return litex_mmc_set_bus_width_sd(host);
+
+	if (ret == 0)
+		host->is_bus_width_set = true;
+	return ret;
 }
 
 static int litex_mmc_get_cd(struct mmc_host *mmc)
