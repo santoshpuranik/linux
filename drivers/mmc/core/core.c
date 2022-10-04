@@ -2052,6 +2052,12 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 	mmc_hw_reset_for_init(host);
 
 	/*
+	 * A GO_PRE_IDLE_STATE command can be used for eMMCs that do not
+	 * have a hardware reset.
+	 */
+	mmc_go_pre_idle(host);
+
+	/*
 	 * sdio_reset sends CMD52 to reset card.  Since we do not know
 	 * if the card is being re-initialized, just send it.  CMD52
 	 * should be ignored by SD/eMMC cards.
@@ -2060,10 +2066,6 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 	if (!(host->caps2 & MMC_CAP2_NO_SDIO))
 		sdio_reset(host);
 
-	pr_debug("go_pre_idle from rescan\n");
-	mmc_go_pre_idle(host);
-
-	pr_debug("go_idle from rescan\n");
 	mmc_go_idle(host);
 
 	if (!(host->caps2 & MMC_CAP2_NO_SD)) {
