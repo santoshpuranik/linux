@@ -28,6 +28,7 @@
 #define LITEX_PHY_CLOCKERDIV  0x04
 #define LITEX_PHY_INITIALIZE  0x08
 #define LITEX_PHY_WRITESTATUS 0x0C
+#define LITEX_PHY_BUSWIDTH    0x10
 #define LITEX_CORE_CMDARG     0x00
 #define LITEX_CORE_CMDCMD     0x04
 #define LITEX_CORE_CMDSND     0x08
@@ -73,6 +74,12 @@
 #define SDIRQ_MEM_TO_SD_DONE 4
 #define SDIRQ_CMD_DONE       8
 
+/* Old gateware is fixed as width 4 */
+#define LITEX_BUSWIDTH_UNSET 0
+#define LITEX_BUSWIDTH_1 1
+#define LITEX_BUSWIDTH_4 2
+#define LITEX_BUSWIDTH_8 3
+
 struct litex_mmc_host {
 	struct mmc_host *mmc;
 
@@ -97,6 +104,7 @@ struct litex_mmc_host {
 
 	bool is_bus_width_set;
 	bool app_cmd;
+	bool gateware_has_bus_width;
 };
 
 static int litex_mmc_sdcard_wait_done(void __iomem *reg, struct device *dev)
@@ -242,7 +250,7 @@ static int litex_mmc_set_bus_width(struct litex_mmc_host *host)
 {
 	int ret;
 
-	if (host->is_bus_width_set)
+	if (host->is_bus_width_set || host->gateware_has_bus_width)
 		return 0;
 
 	if (host->mmc->caps2 & MMC_CAP2_NO_SD) {
@@ -394,7 +402,7 @@ static void litex_mmc_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 	if (data) {
 		/*
-		 * LiteSDCard only supports 4-bit bus width; therefore, we MUST
+		 * Older LiteSDCard only supports 4-bit bus width; therefore, we MUST
 		 * inject a SET_BUS_WIDTH (acmd6) before the very first data
 		 * transfer, earlier than when the mmc subsystem would normally
 		 * get around to it!
@@ -472,13 +480,22 @@ static void litex_mmc_setclk(struct litex_mmc_host *host, unsigned int freq)
 static void litex_mmc_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 {
 	struct litex_mmc_host *host = mmc_priv(mmc);
+	u32 bw = 0;
 
-	/*
-	 * NOTE: Ignore any ios->bus_width updates; they occur right after
-	 * the mmc core sends its own acmd6 bus-width change notification,
-	 * which is redundant since we snoop on the command flow and inject
-	 * an early acmd6 before the first data transfer command is sent!
-	 */
+	if (host->gateware_has_bus_width) {
+		switch (ios->bus_width) {
+			case MMC_BUS_WIDTH_1:
+				bw = LITEX_BUSWIDTH_1;
+				break;
+			case MMC_BUS_WIDTH_4:
+				bw = LITEX_BUSWIDTH_4;
+				break;
+			case MMC_BUS_WIDTH_8:
+				bw = LITEX_BUSWIDTH_8;
+				break;
+		}
+		litex_write32(host->sdphy + LITEX_PHY_BUSWIDTH, bw);
+	}
 
 	/* Update sd_clk */
 	if (ios->clock != host->sd_clk)
@@ -641,6 +658,10 @@ static int litex_mmc_probe(struct platform_device *pdev)
 	mmc->caps2 |= MMC_CAP2_NO_WRITE_PROTECT |
 		      MMC_CAP2_NO_SDIO;
 
+	/* test whether gateware supports 1-bit data */
+	ret = litex_read32(host->sdphy + LITEX_PHY_BUSWIDTH);
+	host->gateware_has_bus_width = (ret != 0);
+
 	platform_set_drvdata(pdev, host);
 
 	ret = mmc_add_host(mmc);
@@ -648,6 +669,7 @@ static int litex_mmc_probe(struct platform_device *pdev)
 		return ret;
 
 	dev_info(dev, "LiteX MMC controller initialized.\n");
+
 	return 0;
 }
 
