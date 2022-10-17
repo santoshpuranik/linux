@@ -639,8 +639,7 @@ static int litex_mmc_probe(struct platform_device *pdev)
 		     MMC_CAP_DRIVER_TYPE_D |
 		     MMC_CAP_CMD23;
 	mmc->caps2 |= MMC_CAP2_NO_WRITE_PROTECT |
-		      MMC_CAP2_NO_SDIO |
-		      MMC_CAP2_NO_MMC;
+		      MMC_CAP2_NO_SDIO;
 
 	platform_set_drvdata(pdev, host);
 
