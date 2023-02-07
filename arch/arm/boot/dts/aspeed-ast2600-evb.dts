@@ -279,6 +279,14 @@
 	status = "okay";
 };
 
+&i3c0 {
+	status = "okay";
+};
+
+&i3c1 {
+	status = "okay";
+};
+
 &fsim0 {
 	status = "okay";
 };
