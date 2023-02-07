@@ -207,6 +207,7 @@
 	compatible = "snps,dw-apb-uart";
 };
 
+/* used for hvi3c ports
 &i2c0 {
 	status = "okay";
 };
@@ -218,6 +219,7 @@
 &i2c2 {
 	status = "okay";
 };
+*/
 
 &i2c3 {
 	status = "okay";
@@ -277,6 +279,11 @@
 
 &i2c15 {
 	status = "okay";
+};
+
+&i3c3 {
+	status = "okay";
+	pinctrl-0 = <&pinctrl_hvi3c4_default>;
 };
 
 &fsim0 {
