@@ -171,7 +171,7 @@ static int mctp_i3c_read(struct mctp_i3c_device *mi)
 	cb->halen = PID_SIZE;
 	pid_to_addr(mi->pid, cb->haddr);
 
-	net_status = netif_rx(skb);
+	net_status = netif_rx_ni(skb);
 
 	if (net_status == NET_RX_SUCCESS) {
 		stats->rx_packets++;
