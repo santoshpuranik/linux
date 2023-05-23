@@ -464,6 +464,7 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 {
 	struct net_device_stats *stats = &midev->ndev->stats;
 	enum mctp_i2c_flow_state fs;
+	struct sock *sk = skb->sk;
 	struct mctp_i2c_hdr *hdr;
 	struct i2c_msg msg = {0};
 	u8 *pecp;
@@ -504,6 +505,10 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 		mctp_i2c_lock_nest(midev);
 		mctp_i2c_device_select(midev->client, midev);
 		rc = __i2c_transfer(midev->adapter, &msg, 1);
+		if (rc < 0 && sk) {
+			sk->sk_err = EIO;
+			sk_error_report(sk);
+		}
 		mctp_i2c_unlock_nest(midev);
 		break;
 
@@ -525,6 +530,11 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 			 */
 			mctp_i2c_invalidate_tx_flow(midev, skb);
 			mctp_i2c_unlock_nest(midev);
+
+			if (sk) {
+				sk->sk_err = EIO;
+				sk_error_report(sk);
+			}
 		}
 
 		break;
