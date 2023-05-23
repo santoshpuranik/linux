@@ -279,9 +279,22 @@ static void mctp_flow_prepare_output(struct sk_buff *skb, struct mctp_dev *dev)
 
 	mctp_dev_set_key(dev, key);
 }
+
+static void mctp_flow_copy(struct sk_buff *dst, struct sk_buff *src)
+{
+	struct mctp_flow *flow;
+
+	flow = skb_ext_find(src, SKB_EXT_MCTP);
+	if (!flow)
+		return;
+
+	mctp_skb_set_flow(dst, flow->key);
+}
+
 #else
 static void mctp_skb_set_flow(struct sk_buff *skb, struct mctp_sk_key *key) {}
 static void mctp_flow_prepare_output(struct sk_buff *skb, struct mctp_dev *dev) {}
+static void mctp_flow_copy(struct sk_buff *dst, struct sk_buff *src) {}
 #endif
 
 static int mctp_frag_queue(struct mctp_sk_key *key, struct sk_buff *skb)
@@ -832,6 +845,12 @@ static int mctp_do_fragment_route(struct mctp_route *rt, struct sk_buff *skb,
 
 		/* copy message payload */
 		skb_copy_bits(skb, pos, skb_transport_header(skb2), size);
+
+		/* If the original packet was part of a flow, the fragments
+		 * need to inherit it. This will refcount the flow key
+		 * accordingly.
+		 */
+		mctp_flow_copy(skb2, skb);
 
 		/* do route */
 		rc = rt->output(rt, skb2);
