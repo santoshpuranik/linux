@@ -73,6 +73,107 @@ TRACE_EVENT(mctp_key_release,
 	)
 );
 
+TRACE_EVENT(mctp_i2c_tx_flow_lock,
+	TP_PROTO(int fs, int lcount, int rcount, __u8 src, __u8 dst, __u8 tag),
+	TP_ARGS(fs, lcount, rcount, src, dst, tag),
+	TP_STRUCT__entry(
+		__field(int,	fs)
+		__field(int,	lcount)
+		__field(int,	rcount)
+		__field(__u8,	src)
+		__field(__u8,	dst)
+		__field(__u8,	tag)
+	),
+	TP_fast_assign(
+		__entry->fs = fs;
+		__entry->lcount = lcount;
+		__entry->rcount = rcount;
+		__entry->src = src;
+		__entry->dst = dst;
+		__entry->tag = tag;
+	),
+	TP_printk("fs %s, new lcount %d, rcount %d, key {%d -> %d, tag %1x}",
+		  __print_symbolic(__entry->fs,
+				   { 0, "invalid" },
+				   { 1, "none" },
+				   { 2, "new" },
+				   { 3, "existing" }),
+		  __entry->lcount, __entry->rcount,
+		  __entry->src, __entry->dst, __entry->tag)
+);
+
+TRACE_EVENT(mctp_i2c_tx_flow_unlock,
+	TP_PROTO(int fs, int lcount, int rcount, __u8 src, __u8 dst, __u8 tag),
+	TP_ARGS(fs, lcount, rcount, src, dst, tag),
+	TP_STRUCT__entry(
+		__field(int,	fs)
+		__field(int,	lcount)
+		__field(int,	rcount)
+		__field(__u8,	src)
+		__field(__u8,	dst)
+		__field(__u8,	tag)
+	),
+	TP_fast_assign(
+		__entry->fs = fs;
+		__entry->lcount = lcount;
+		__entry->rcount = rcount;
+		__entry->src = src;
+		__entry->dst = dst;
+		__entry->tag = tag;
+	),
+	TP_printk("fs %s, new lcount %d, rcount %d, key {%d -> %d, tag %1x}",
+		  __print_symbolic(__entry->fs,
+				   { 0, "invalid" },
+				   { 1, "none" },
+				   { 2, "new" },
+				   { 3, "existing" }),
+		  __entry->lcount, __entry->rcount,
+		  __entry->src, __entry->dst, __entry->tag)
+);
+
+TRACE_EVENT(mctp_i2c_tx_flow_release,
+	TP_PROTO(int dfs, int lcount, int rcount, __u8 src, __u8 dst, __u8 tag),
+	TP_ARGS(dfs, lcount, rcount, src, dst, tag),
+	TP_STRUCT__entry(
+		__field(int,	dfs)
+		__field(int,	lcount)
+		__field(int,	rcount)
+		__field(__u8,	src)
+		__field(__u8,	dst)
+		__field(__u8,	tag)
+	),
+	TP_fast_assign(
+		__entry->dfs = dfs;
+		__entry->lcount = lcount;
+		__entry->rcount = rcount;
+		__entry->src = src;
+		__entry->dst = dst;
+		__entry->tag = tag;
+	),
+	TP_printk("dfs %s, lcount %d, new rcount %d, key {%d -> %d, tag %1x}",
+		  __print_symbolic(__entry->dfs,
+				   { 0, "d:new" },
+				   { 1, "d:active" },
+				   { 2, "d:invalid" }),
+		  __entry->lcount, __entry->rcount,
+		  __entry->src, __entry->dst, __entry->tag)
+);
+
+TRACE_EVENT(mctp_i2c_tx_flow_release_dec,
+	TP_PROTO(int lcount, int rcount),
+	TP_ARGS(lcount, rcount),
+	TP_STRUCT__entry(
+		__field(int,	lcount)
+		__field(int,	rcount)
+	),
+	TP_fast_assign(
+		__entry->lcount = lcount;
+		__entry->rcount = rcount;
+	),
+	TP_printk("new lcount %d, rcount %d",
+		   __entry->lcount, __entry->rcount)
+);
+
 #endif
 
 #include <trace/define_trace.h>

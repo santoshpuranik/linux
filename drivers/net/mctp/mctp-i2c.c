@@ -25,6 +25,8 @@
 #include <net/mctp.h>
 #include <net/mctpdevice.h>
 
+#include <trace/events/mctp.h>
+
 /* byte_count is limited to u8 */
 #define MCTP_I2C_MAXBLOCK 255
 /* One byte is taken by source_slave */
@@ -353,14 +355,28 @@ enum mctp_i2c_flow_state {
 	MCTP_I2C_TX_FLOW_EXISTING,
 };
 
+struct mctp_flow_info {
+	enum mctp_i2c_flow_state state;
+	bool valid;
+	u8 src, dst, tag;
+};
+
 static enum mctp_i2c_flow_state
-mctp_i2c_get_tx_flow_state(struct mctp_i2c_dev *midev, struct sk_buff *skb)
+mctp_i2c_get_tx_flow_state(struct mctp_i2c_dev *midev, struct sk_buff *skb,
+			   struct mctp_flow_info *finfo)
 {
 	enum mctp_i2c_flow_state state;
+	struct mctp_flow_info _finfo;
 	struct mctp_sk_key *key;
 	struct mctp_flow *flow;
 	unsigned long flags;
 
+	if (finfo)
+		memset(finfo, 0, sizeof(*finfo));
+	else
+		finfo = &_finfo;
+
+	finfo->state = MCTP_I2C_TX_FLOW_NONE;
 	flow = skb_ext_find(skb, SKB_EXT_MCTP);
 	if (!flow)
 		return MCTP_I2C_TX_FLOW_NONE;
@@ -387,6 +403,10 @@ mctp_i2c_get_tx_flow_state(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 		default:
 			state = MCTP_I2C_TX_FLOW_INVALID;
 		}
+		finfo->src = key->local_addr;
+		finfo->dst = key->peer_addr;
+		finfo->tag = key->tag;
+		finfo->state = state;
 	}
 
 	spin_unlock_irqrestore(&key->lock, flags);
@@ -398,7 +418,8 @@ mctp_i2c_get_tx_flow_state(struct mctp_i2c_dev *midev, struct sk_buff *skb)
  * i2c clients from using the bus. refcounts are simply to prevent
  * recursive locking.
  */
-static void mctp_i2c_lock_nest(struct mctp_i2c_dev *midev)
+static void mctp_i2c_lock_nest(struct mctp_i2c_dev *midev,
+			       struct mctp_flow_info *finfo)
 {
 	unsigned long flags;
 	bool lock;
@@ -406,13 +427,17 @@ static void mctp_i2c_lock_nest(struct mctp_i2c_dev *midev)
 	spin_lock_irqsave(&midev->lock, flags);
 	lock = midev->i2c_lock_count == 0;
 	midev->i2c_lock_count++;
+	trace_mctp_i2c_tx_flow_lock(finfo->state, midev->i2c_lock_count,
+				    midev->release_count,
+				    finfo->src, finfo->dst, finfo->tag);
 	spin_unlock_irqrestore(&midev->lock, flags);
 
 	if (lock)
 		i2c_lock_bus(midev->adapter, I2C_LOCK_SEGMENT);
 }
 
-static void mctp_i2c_unlock_nest(struct mctp_i2c_dev *midev)
+static void mctp_i2c_unlock_nest(struct mctp_i2c_dev *midev,
+				 struct mctp_flow_info *finfo)
 {
 	unsigned long flags;
 	bool unlock;
@@ -421,6 +446,9 @@ static void mctp_i2c_unlock_nest(struct mctp_i2c_dev *midev)
 	if (!WARN_ONCE(midev->i2c_lock_count == 0, "lock count underflow!"))
 		midev->i2c_lock_count--;
 	unlock = midev->i2c_lock_count == 0;
+	trace_mctp_i2c_tx_flow_unlock(finfo->state, midev->i2c_lock_count,
+				      midev->release_count,
+				      finfo->src, finfo->dst, finfo->tag);
 	spin_unlock_irqrestore(&midev->lock, flags);
 
 	if (unlock)
@@ -446,12 +474,13 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 {
 	struct net_device_stats *stats = &midev->ndev->stats;
 	enum mctp_i2c_flow_state fs;
+	struct mctp_flow_info finfo;
 	struct mctp_i2c_hdr *hdr;
 	struct i2c_msg msg = {0};
 	u8 *pecp;
 	int rc;
 
-	fs = mctp_i2c_get_tx_flow_state(midev, skb);
+	fs = mctp_i2c_get_tx_flow_state(midev, skb, &finfo);
 
 	hdr = (void *)skb_mac_header(skb);
 	/* Sanity check that packet contents matches skb length,
@@ -483,17 +512,17 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 	switch (fs) {
 	case MCTP_I2C_TX_FLOW_NONE:
 		/* no flow: full lock & unlock */
-		mctp_i2c_lock_nest(midev);
+		mctp_i2c_lock_nest(midev, &finfo);
 		mctp_i2c_device_select(midev->client, midev);
 		rc = __i2c_transfer(midev->adapter, &msg, 1);
-		mctp_i2c_unlock_nest(midev);
+		mctp_i2c_unlock_nest(midev, &finfo);
 		break;
 
 	case MCTP_I2C_TX_FLOW_NEW:
 		/* new flow: lock, tx, but don't unlock; that will happen
 		 * on flow release
 		 */
-		mctp_i2c_lock_nest(midev);
+		mctp_i2c_lock_nest(midev, &finfo);
 		mctp_i2c_device_select(midev->client, midev);
 		fallthrough;
 
@@ -528,6 +557,8 @@ static void mctp_i2c_flow_release(struct mctp_i2c_dev *midev)
 	}
 
 	midev->i2c_lock_count -= midev->release_count;
+	trace_mctp_i2c_tx_flow_release_dec(midev->i2c_lock_count,
+					   midev->release_count);
 	unlock = midev->i2c_lock_count == 0 && midev->release_count > 0;
 	midev->release_count = 0;
 	spin_unlock_irqrestore(&midev->lock, flags);
@@ -635,6 +666,12 @@ static void mctp_i2c_release_flow(struct mctp_dev *mdev,
 		midev->release_count++;
 		queue_release = true;
 	}
+	trace_mctp_i2c_tx_flow_release(key->dev_flow_state,
+				       midev->i2c_lock_count,
+				       midev->release_count,
+				       key->local_addr,
+				       key->peer_addr,
+				       key->tag);
 	key->dev_flow_state = MCTP_I2C_FLOW_STATE_INVALID;
 	spin_unlock_irqrestore(&midev->lock, flags);
 
