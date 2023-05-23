@@ -394,6 +394,24 @@ mctp_i2c_get_tx_flow_state(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 	return state;
 }
 
+static void mctp_i2c_invalidate_tx_flow(struct mctp_i2c_dev *dev,
+					struct sk_buff *skb)
+{
+	struct mctp_sk_key *key;
+	struct mctp_flow *flow;
+	unsigned long flags;
+
+	flow = skb_ext_find(skb, SKB_EXT_MCTP);
+	if (!flow || !flow->key)
+		return;
+
+	key = flow->key;
+
+	spin_lock_irqsave(&key->lock, flags);
+	key->dev_flow_state = MCTP_I2C_TX_FLOW_INVALID;
+	spin_unlock_irqrestore(&key->lock, flags);
+}
+
 /* We're not contending with ourselves here; we only need to exclude other
  * i2c clients from using the bus. refcounts are simply to prevent
  * recursive locking.
@@ -500,6 +518,15 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 	case MCTP_I2C_TX_FLOW_EXISTING:
 		/* existing flow: we already have the lock; just tx */
 		rc = __i2c_transfer(midev->adapter, &msg, 1);
+		if (rc < 0) {
+			/* TX failure means we no longer have a proper flow;
+			 * invalidate now (all remaining SKBs will be dropped
+			 * after dequeue), and drop the bus lock.
+			 */
+			mctp_i2c_invalidate_tx_flow(midev, skb);
+			mctp_i2c_unlock_nest(midev);
+		}
+
 		break;
 
 	case MCTP_I2C_TX_FLOW_INVALID:
