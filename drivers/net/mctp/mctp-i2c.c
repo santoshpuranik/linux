@@ -394,6 +394,64 @@ mctp_i2c_get_tx_flow_state(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 	return state;
 }
 
+static int mctp_i2c_transfer(struct mctp_i2c_dev *midev,
+			     struct i2c_msg *msg)
+{
+	struct net_device_stats *stats = &midev->ndev->stats;
+	const unsigned int max_retries = 8; /* PN1 from DSP0237 */
+	unsigned int try;
+	int rc;
+
+	for (try = 0; try < max_retries; try++) {
+		rc = __i2c_transfer(midev->adapter, msg, 1);
+		if (rc >= 0)
+			return 0;
+
+		dev_warn_ratelimited(&midev->adapter->dev,
+				     "__i2c_transfer failed %d\n", rc);
+
+		/* Count TX errors here; we may retry, but an eventual fatal
+		 * error will be counted by the caller, which will updates
+		 * stats->tx_dropped
+		 */
+		stats->tx_errors++;
+
+		switch (rc) {
+		case -EAGAIN:
+			/* i2c core already handles arbitration-loss retry,
+			 * so don't duplicate that here.
+			 */
+			return rc;
+
+		case -ENXIO:
+			/* NAK during address phase: not a retry-able
+			 * operation; DSP0237 requires that endpoints always
+			 * ACK the address byte
+			 */
+			return rc;
+
+		case -EIO:
+			/* NAK during non-address bytes. DSP0237 specifies that
+			 * endpoints can NACK during bytes 2-8 (the "NACK
+			 * window") as a packet retry mechanism. We don't have
+			 * any way to differentiate later NACKs, but at least
+			 * we know it's not during the address byte
+			 *
+			 * So, retry if we're under the count.
+			 */
+			break;
+
+		default:
+			/* other errors, we don't have any specific
+			 * error-handling strategy
+			 */
+			return rc;
+		}
+	}
+
+	return rc;
+}
+
 /* We're not contending with ourselves here; we only need to exclude other
  * i2c clients from using the bus. refcounts are simply to prevent
  * recursive locking.
@@ -485,7 +543,7 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 		/* no flow: full lock & unlock */
 		mctp_i2c_lock_nest(midev);
 		mctp_i2c_device_select(midev->client, midev);
-		rc = __i2c_transfer(midev->adapter, &msg, 1);
+		rc = mctp_i2c_transfer(midev, &msg);
 		mctp_i2c_unlock_nest(midev);
 		break;
 
@@ -499,7 +557,7 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 
 	case MCTP_I2C_TX_FLOW_EXISTING:
 		/* existing flow: we already have the lock; just tx */
-		rc = __i2c_transfer(midev->adapter, &msg, 1);
+		rc = mctp_i2c_transfer(midev, &msg);
 		break;
 
 	case MCTP_I2C_TX_FLOW_INVALID:
@@ -507,9 +565,8 @@ static void mctp_i2c_xmit(struct mctp_i2c_dev *midev, struct sk_buff *skb)
 	}
 
 	if (rc < 0) {
-		dev_warn_ratelimited(&midev->adapter->dev,
-				     "__i2c_transfer failed %d\n", rc);
-		stats->tx_errors++;
+		/* stats->tx_errors handled by mctp_i2c_transfer */
+		stats->tx_dropped++;
 	} else {
 		stats->tx_bytes += skb->len;
 		stats->tx_packets++;
