@@ -407,20 +407,17 @@ static int mctp_i2c_transfer(struct mctp_i2c_dev *midev,
 		if (rc >= 0)
 			return 0;
 
-		dev_warn_ratelimited(&midev->adapter->dev,
-				     "__i2c_transfer failed %d\n", rc);
-
-		/* Count TX errors here; we may retry, but an eventual fatal
-		 * error will be counted by the caller, which will updates
-		 * stats->tx_dropped
+		/* Account individual TX error types here; we may retry, but an
+		 * eventual fatal error will be counted by the caller, which
+		 * will handle the increment of stats->tx_dropped.
 		 */
-		stats->tx_errors++;
 
 		switch (rc) {
 		case -EAGAIN:
 			/* i2c core already handles arbitration-loss retry,
 			 * so don't duplicate that here.
 			 */
+			stats->tx_window_errors++;
 			return rc;
 
 		case -ENXIO:
@@ -428,6 +425,7 @@ static int mctp_i2c_transfer(struct mctp_i2c_dev *midev,
 			 * operation; DSP0237 requires that endpoints always
 			 * ACK the address byte
 			 */
+			stats->tx_carrier_errors++;
 			return rc;
 
 		case -EIO:
@@ -439,12 +437,14 @@ static int mctp_i2c_transfer(struct mctp_i2c_dev *midev,
 			 *
 			 * So, retry if we're under the count.
 			 */
+			stats->tx_aborted_errors++;
 			break;
 
 		default:
 			/* other errors, we don't have any specific
 			 * error-handling strategy
 			 */
+			stats->tx_errors++;
 			return rc;
 		}
 	}
