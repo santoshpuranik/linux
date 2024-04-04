@@ -779,9 +779,7 @@ static unsigned int ar_search_last_active_buffer(struct ar_context *ctx,
 		next_res_count = READ_ONCE(ctx->descriptors[next_i].res_count);
 		/*
 		 * If the next descriptor is still empty, we must stop at this
-		 * descriptor.
-		 */
-		if (next_res_count == cpu_to_le16(PAGE_SIZE)) {
+		 * If the next descriptor is xt_res_count == cpu_to_le16(PAGE_SIZE)) {
 			/*
 			 * The exception is when the DMA data for one packet is
 			 * split over three buffers; in this case, the middle
@@ -3898,3 +3896,4 @@ MODULE_LICENSE("GPL");
 
 /* Provide a module alias so root-on-sbp2 initrds don't break. */
 MODULE_ALIAS("ohci1394");
+                                                                                      
