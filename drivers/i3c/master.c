@@ -20,6 +20,9 @@
 
 #include "internals.h"
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/i3c.h>
+
 static DEFINE_IDR(i3c_bus_idr);
 static DEFINE_MUTEX(i3c_core_lock);
 static int __i3c_first_dynamic_bus_num;
@@ -2883,6 +2886,8 @@ int i3c_dev_do_priv_xfers_locked(struct i3c_dev_desc *dev,
 				 int nxfers)
 {
 	struct i3c_master_controller *master;
+	unsigned int i;
+	int rc;
 
 	if (!dev)
 		return -ENOENT;
@@ -2894,7 +2899,13 @@ int i3c_dev_do_priv_xfers_locked(struct i3c_dev_desc *dev,
 	if (!master->ops->priv_xfers)
 		return -ENOTSUPP;
 
-	return master->ops->priv_xfers(dev, xfers, nxfers);
+	rc = master->ops->priv_xfers(dev, xfers, nxfers);
+
+	for (i = 0; i < nxfers; i++)
+		trace_i3c_priv_xfer(master, dev->dev, &xfers[i]);
+
+
+	return rc;
 }
 
 int i3c_dev_disable_ibi_locked(struct i3c_dev_desc *dev)
