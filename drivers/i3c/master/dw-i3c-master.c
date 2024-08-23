@@ -360,6 +360,15 @@ static void dw_i3c_master_read_ibi_fifo(struct dw_i3c_master *master,
 	return dw_i3c_master_read_fifo(master, IBI_QUEUE_STATUS, bytes, nbytes);
 }
 
+static void dw_i3c_master_drain_rx_fifo(struct dw_i3c_master *master,
+					int len)
+{
+	int i;
+
+	for (i = 0; i < DIV_ROUND_UP(len, 4); i++)
+		readl(master->regs + RX_TX_DATA_PORT);
+}
+
 static struct dw_i3c_xfer *
 dw_i3c_master_alloc_xfer(struct dw_i3c_master *master, unsigned int ncmds)
 {
@@ -468,12 +477,26 @@ static void dw_i3c_master_end_xfer_locked(struct dw_i3c_master *master, u32 isr)
 
 	for (i = 0; i < nresp; i++) {
 		struct dw_i3c_cmd *cmd;
+		u8 tid, len;
 		u32 resp;
 
 		resp = readl(master->regs + RESPONSE_QUEUE_PORT);
 
-		cmd = &xfer->cmds[RESPONSE_PORT_TID(resp)];
-		cmd->rx_len = RESPONSE_PORT_DATA_LEN(resp);
+		tid = RESPONSE_PORT_TID(resp);
+		len = RESPONSE_PORT_DATA_LEN(resp);
+
+		if (tid >= xfer->ncmds) {
+			dev_warn(&master->base.dev,
+				 "%s: invalid TID %d, n_cmds %d\n",
+				 __func__, tid, xfer->ncmds);
+			dw_i3c_master_drain_rx_fifo(master, len);
+
+			ret = -EIO;
+			goto err;
+		}
+
+		cmd = &xfer->cmds[tid];
+		cmd->rx_len = len;
 		cmd->error = RESPONSE_PORT_ERR_STATUS(resp);
 		if (cmd->rx_len && !cmd->error)
 			dw_i3c_master_read_rx_fifo(master, cmd->rx_buf,
@@ -502,6 +525,7 @@ static void dw_i3c_master_end_xfer_locked(struct dw_i3c_master *master, u32 isr)
 		}
 	}
 
+err:
 	xfer->ret = ret;
 	complete(&xfer->comp);
 
